@@ -1,0 +1,55 @@
+# Fork-only workflow: fast ARM64 build of the daemon + CLI for local testing.
+# Skips fmt/clippy/tests/MSI so work-in-progress commits still produce binaries.
+#
+# Branch model: `master` mirrors upstream, `fork` is master + our patch stack
+# (this is what gets built and installed), `feature/*` hold one upstreamable
+# change each and carry no CI file. Pushes to `fork` build automatically; any
+# other ref can be built on demand via workflow_dispatch from the `fork` branch.
+name: Fork build (aarch64)
+
+on:
+  push:
+    branches:
+      - fork
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag or SHA). Empty = the branch this was dispatched from."
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      RUSTFLAGS: -Ctarget-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - id: meta
+        shell: pwsh
+        run: |
+          $sha = git rev-parse --short=8 HEAD
+          $ref = "${{ inputs.ref || github.ref_name }}" -replace '[^A-Za-z0-9._-]', '-'
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "ref=$ref" >> $env:GITHUB_OUTPUT
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+          cache-all-crates: "true"
+          key: aarch64-pc-windows-msvc-fork
+      - uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: "build"
+          target: aarch64-pc-windows-msvc
+          args: "--locked --release -p komorebi -p komorebic -p komorebic-no-console"
+      - uses: actions/upload-artifact@v7
+        with:
+          # artifact names cannot contain '/', so the ref is sanitised above
+          name: komorebi-aarch64-run${{ github.run_number }}-${{ steps.meta.outputs.ref }}-${{ steps.meta.outputs.sha }}
+          path: |
+            target/aarch64-pc-windows-msvc/release/*.exe
+            target/aarch64-pc-windows-msvc/release/*.pdb
+          retention-days: 14
