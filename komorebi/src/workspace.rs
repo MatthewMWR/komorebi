@@ -41,6 +41,7 @@ use crate::should_act_individual;
 use crate::stackbar_manager;
 use crate::stackbar_manager::STACKBAR_TAB_HEIGHT;
 use crate::static_config::WorkspaceConfig;
+use crate::transparency_manager;
 use crate::window::Window;
 use crate::window::WindowDetails;
 use crate::windows_api::WindowsApi;
@@ -1073,6 +1074,10 @@ impl Workspace {
 
     pub fn remove_window(&mut self, hwnd: isize) -> eyre::Result<()> {
         border_manager::delete_border(hwnd);
+        // Undo any transparency komorebi applied before the window stops being
+        // managed; a leftover WS_EX_LAYERED style would make it ineligible for
+        // management when it later reappears (e.g. after minimize + restore)
+        transparency_manager::forget_hwnd(hwnd);
 
         if self.floating_windows().iter().any(|w| w.hwnd == hwnd) {
             self.floating_windows_mut().retain(|w| w.hwnd != hwnd);
