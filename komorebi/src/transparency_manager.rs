@@ -30,6 +30,29 @@ pub fn known_hwnds() -> Vec<isize> {
     known.iter().copied().collect()
 }
 
+/// Make `hwnd` opaque again if komorebi made it transparent, and forget it.
+///
+/// Must be called whenever a window leaves management (minimize, hide,
+/// destroy, unmanage, reaping, ...). Transparency is applied by adding the
+/// `WS_EX_LAYERED` style, and `window_is_eligible` rejects layered windows
+/// unless they are in `known_hwnds()`. That list is rebuilt from the windows
+/// currently in containers, so a faded window that leaves its container would
+/// keep the style but drop off the list, and be refused forever when it tries
+/// to come back. Managed transparency must never outlive management.
+pub fn forget_hwnd(hwnd: isize) {
+    let was_known = {
+        let mut known = KNOWN_HWNDS.get_or_init(|| Mutex::new(Vec::new())).lock();
+        let before = known.len();
+        known.retain(|known_hwnd| *known_hwnd != hwnd);
+        known.len() != before
+    };
+
+    if was_known && let Err(error) = Window::from(hwnd).opaque() {
+        // The window may already have been destroyed; nothing to clean up then
+        tracing::debug!("failed to make unmanaged window {hwnd} opaque: {error}");
+    }
+}
+
 pub fn channel() -> &'static (Sender<Notification>, Receiver<Notification>) {
     CHANNEL.get_or_init(|| crossbeam_channel::bounded(20))
 }
@@ -115,11 +138,20 @@ pub fn handle_notifications(wm: Arc<Mutex<WindowManager>>) -> color_eyre::Result
                                     "failed to make monocle window {hwnd} opaque: {error}"
                                 )
                             }
-                        } else if let Err(error) = window.transparent() {
-                            let hwnd = window.hwnd;
-                            tracing::error!(
-                                "failed to make monocle window {hwnd} transparent: {error}"
-                            )
+                        } else {
+                            match window.transparent() {
+                                Err(error) => {
+                                    let hwnd = window.hwnd;
+                                    tracing::error!(
+                                        "failed to make monocle window {hwnd} transparent: {error}"
+                                    )
+                                }
+                                Ok(()) => {
+                                    // Track it so forget_hwnd can undo this if the window
+                                    // leaves management while faded
+                                    known_hwnds.lock().push(window.hwnd);
+                                }
+                            }
                         }
                     }
 
