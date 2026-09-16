@@ -3632,6 +3632,11 @@
           "description": "Ignore commands on temporarily unmanaged/floated windows",
           "type": "string",
           "const": "NoOp"
+        },
+        {
+          "description": "Process commands on floated windows, ignore commands on windows not managed by komorebi",
+          "type": "string",
+          "const": "NoOpUnmanaged"
         }
       ]
     },

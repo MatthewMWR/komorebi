@@ -1468,18 +1468,31 @@ impl WindowManager {
 
     #[tracing::instrument(skip(self))]
     fn handle_unmanaged_window_behaviour(&self) -> eyre::Result<()> {
-        if matches!(
-            self.unmanaged_window_operation_behaviour,
-            OperationBehaviour::NoOp
-        ) {
-            let workspace = self.focused_workspace()?;
-            let focused_hwnd = WindowsApi::foreground_window()?;
-            if !workspace.contains_managed_window(focused_hwnd) {
-                bail!("ignoring commands while active window is not managed by komorebi");
-            }
+        let behaviour = self.unmanaged_window_operation_behaviour;
+        if matches!(behaviour, OperationBehaviour::Op) {
+            return Ok(());
         }
 
-        Ok(())
+        let workspace = self.focused_workspace()?;
+        let focused_hwnd = WindowsApi::foreground_window()?;
+
+        if workspace.contains_managed_window(focused_hwnd) {
+            return Ok(());
+        }
+
+        // Windows floated via toggle-float are still tracked by komorebi and most
+        // operations (move/send to workspace or monitor, focus in direction, ...)
+        // have explicit code paths for them, so NoOpUnmanaged lets them through
+        if matches!(behaviour, OperationBehaviour::NoOpUnmanaged)
+            && workspace
+                .floating_windows()
+                .iter()
+                .any(|window| window.hwnd == focused_hwnd)
+        {
+            return Ok(());
+        }
+
+        bail!("ignoring commands while active window is not managed by komorebi");
     }
 
     /// Check for an existing wallpaper definition on the workspace/monitor index pair and apply it

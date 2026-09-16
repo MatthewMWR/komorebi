@@ -10,6 +10,7 @@ Arguments:
           Possible values:
           - op:    Process komorebic commands on temporarily unmanaged/floated windows
           - no-op: Ignore komorebic commands on temporarily unmanaged/floated windows
+          - no-op-unmanaged: Process komorebic commands on floated windows, ignore komorebic commands on windows not managed by komorebi
 
 Options:
   -h, --help
