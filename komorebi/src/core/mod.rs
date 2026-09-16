@@ -738,6 +738,8 @@ pub enum OperationBehaviour {
     Op,
     /// Ignore commands on temporarily unmanaged/floated windows
     NoOp,
+    /// Process commands on floated windows, ignore commands on windows not managed by komorebi
+    NoOpUnmanaged,
 }
 
 #[derive(
