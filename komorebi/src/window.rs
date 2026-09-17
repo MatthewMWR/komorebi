@@ -35,6 +35,7 @@ use crate::core::config_generation::IdWithIdentifier;
 use crate::core::config_generation::MatchingRule;
 use crate::core::config_generation::MatchingStrategy;
 use crate::focus_manager;
+use crate::reaper;
 use crate::stackbar_manager;
 use crate::styles::ExtendedWindowStyle;
 use crate::styles::WindowStyle;
@@ -1079,6 +1080,7 @@ pub struct RuleDebug {
     pub is_cloaked: bool,
     pub allow_cloaked: bool,
     pub allow_layered_transparency: bool,
+    pub allow_managed_without_caption: bool,
     pub window_style: Option<WindowStyle>,
     pub extended_window_style: Option<ExtendedWindowStyle>,
     pub title: Option<String>,
@@ -1234,7 +1236,20 @@ fn window_is_eligible(
         }
     }
 
-    if (allow_wsl2_gui || allow_titlebar_removed || style.contains(WindowStyle::CAPTION) && ex_style.contains(ExtendedWindowStyle::WINDOWEDGE))
+    // A window that is already managed can lose WS_CAPTION after the fact, either
+    // transiently (native fullscreen, e.g. Chromium's F11) or permanently (Windows
+    // Terminal leaves its window borderless after exiting fullscreen while Focus Mode
+    // is on). If we stop processing its events, the focused container goes stale
+    // while the window keeps being tiled, so only relax the caption requirement here;
+    // every other check (rules, layered, modal frame) still applies
+    let is_managed = reaper::HWNDS_CACHE.lock().contains_key(&hwnd);
+    let allow_managed_without_caption = is_managed;
+    debug.allow_managed_without_caption = allow_managed_without_caption;
+
+    let has_caption = style.contains(WindowStyle::CAPTION)
+        && ex_style.contains(ExtendedWindowStyle::WINDOWEDGE);
+
+    if (allow_wsl2_gui || allow_titlebar_removed || allow_managed_without_caption || has_caption)
         && !ex_style.contains(ExtendedWindowStyle::DLGMODALFRAME)
         // Get a lot of dupe events coming through that make the redrawing go crazy
         // on FocusChange events if I don't filter out this one. But, if we are
@@ -1245,12 +1260,25 @@ fn window_is_eligible(
     {
         return true;
     } else if let Some(event) = event {
-        tracing::debug!(
-            "ignoring (exe: {}, title: {}, event: {})",
-            exe_name,
-            title,
-            event
-        );
+        if is_managed {
+            // Silently dropping events for a window we are tiling is how the focused
+            // container ends up stale, so make it visible at the default log level
+            tracing::info!(
+                "ignoring event from managed window (exe: {}, title: {}, event: {}, style: {:?}, ex_style: {:?})",
+                exe_name,
+                title,
+                event,
+                style,
+                ex_style
+            );
+        } else {
+            tracing::debug!(
+                "ignoring (exe: {}, title: {}, event: {})",
+                exe_name,
+                title,
+                event
+            );
+        }
     }
 
     false
