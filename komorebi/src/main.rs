@@ -330,7 +330,11 @@ fn main() -> eyre::Result<()> {
     stackbar_manager::listen_for_notifications(wm.clone());
     transparency_manager::listen_for_notifications(wm.clone());
     monitor_reconciliator::listen_for_notifications(wm.clone())?;
-    reaper::listen_for_notifications(wm.clone(), wm.lock().known_hwnds.clone());
+    let (known_hwnds, virtual_desktop_id) = {
+        let wm = wm.lock();
+        (wm.known_hwnds.clone(), wm.virtual_desktop_id.clone())
+    };
+    reaper::listen_for_notifications(wm.clone(), known_hwnds, virtual_desktop_id);
     focus_manager::listen_for_notifications(wm.clone());
     theme_manager::listen_for_notifications();
 

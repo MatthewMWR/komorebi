@@ -52,7 +52,9 @@ use windows::Win32::Graphics::Gdi::MonitorFromWindow;
 use windows::Win32::Graphics::Gdi::Rectangle;
 use windows::Win32::Graphics::Gdi::RoundRect;
 use windows::Win32::System::Com::CLSCTX_ALL;
+use windows::Win32::System::Com::COINIT_MULTITHREADED;
 use windows::Win32::System::Com::CoCreateInstance;
+use windows::Win32::System::Com::CoInitializeEx;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Power::HPOWERNOTIFY;
 use windows::Win32::System::Power::RegisterPowerSettingNotification;
@@ -81,6 +83,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::Shell::DWPOS_FILL;
 use windows::Win32::UI::Shell::DesktopWallpaper;
 use windows::Win32::UI::Shell::IDesktopWallpaper;
+use windows::Win32::UI::Shell::IVirtualDesktopManager;
+use windows::Win32::UI::Shell::VirtualDesktopManager;
 use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
 use windows::Win32::UI::WindowsAndMessaging::BringWindowToTop;
 use windows::Win32::UI::WindowsAndMessaging::CW_USEDEFAULT;
@@ -1051,6 +1055,29 @@ impl WindowsApi {
         }
 
         Ok(())
+    }
+
+    /// Initialise COM for the calling thread (multithreaded apartment). Safe to call more than
+    /// once; a mismatched-apartment result is ignored because the thread is then already usable
+    pub fn initialise_com_for_thread() {
+        let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    }
+
+    /// The shell's `IVirtualDesktopManager`, which knows which virtual desktop a window lives on.
+    /// The caller must have initialised COM on its thread
+    pub fn virtual_desktop_manager() -> eyre::Result<IVirtualDesktopManager> {
+        Ok(unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL)? })
+    }
+
+    /// Whether the shell considers `hwnd` to be on the virtual desktop the user is currently
+    /// looking at. Unlike `DWMWA_CLOAKED`, this distinguishes "on another desktop" from
+    /// "cloaked by komorebi": windows komorebi hides itself are still on the current desktop
+    pub fn is_window_on_current_virtual_desktop(
+        manager: &IVirtualDesktopManager,
+        hwnd: isize,
+    ) -> eyre::Result<bool> {
+        let on_current = unsafe { manager.IsWindowOnCurrentVirtualDesktop(HWND(as_ptr!(hwnd)))? };
+        Ok(on_current.as_bool())
     }
 
     pub fn is_window_cloaked(hwnd: isize) -> eyre::Result<bool> {
